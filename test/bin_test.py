@@ -17,21 +17,18 @@
 
 import imp
 import mock
-import server_test
-from helpers import with_config
+from server_test import ServerTest
 
 
-class LuigidTest(server_test.ServerTestRun):
+class LuigidTest(ServerTest):
 
-    @with_config({'scheduler': {'state_path': '/tmp/luigi-test-server-state'}})
     def run_server(self):
         luigid = imp.load_source('luigid', 'bin/luigid')
         luigid.main(['--port', str(self._api_port)])
 
 
-class LuigidDaemonTest(server_test.ServerTest):
+class LuigidDaemonTest(ServerTest):
 
-    @with_config({'scheduler': {'state_path': '/tmp/luigi-test-server-state'}})
     @mock.patch('daemon.DaemonContext')
     def run_server(self, daemon_context):
         luigid = imp.load_source('luigid', 'bin/luigid')

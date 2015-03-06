@@ -23,12 +23,14 @@ See :doc:`/central_scheduler` for more info.
 import json
 import logging
 import time
-from socket import gaierror
+try:
+    from urllib import urlencode
+    from urllib2 import urlopen, URLError, Request
+except ImportError:
+    from urllib.parse import urlencode
+    from urllib.request import Request, urlopen
+    from urllib.error import URLError
 
-from tornado.simple_httpclient import SimpleAsyncHTTPClient
-from tornado.httpclient import HTTPError
-
-from luigi import six
 from luigi import configuration
 from luigi.scheduler import PENDING, Scheduler
 
@@ -56,22 +58,16 @@ class RemoteScheduler(Scheduler):
         if connect_timeout is None:
             connect_timeout = config.getfloat('core', 'rpc-connect-timeout', 10.0)
         self._connect_timeout = connect_timeout
-        self._client = SimpleAsyncHTTPClient()
 
     def _wait(self):
         time.sleep(30)
 
-    def _async_fetch(self, full_url, body):
-        return self._client.fetch(
-            full_url,
-            method="POST",
-            body=body,
-            connect_timeout=self._connect_timeout,
-        )
+    def _post(self, url, body):
+        url = 'http://%s:%d%s' % (self._host, self._port, url)
+        return Request(url, body)
 
     def _fetch(self, url, body, log_exceptions=True, attempts=3):
-
-        full_url = 'http://%s:%d%s' % (self._host, self._port, url)
+        req = self._post(url, body)
         last_exception = None
         attempt = 0
         while attempt < attempts:
@@ -80,11 +76,9 @@ class RemoteScheduler(Scheduler):
                 logger.info("Retrying...")
                 self._wait()  # wait for a bit and retry
             try:
-                response = self._client.io_loop.run_sync(
-                    lambda: self._async_fetch(full_url, body)
-                )
+                response = urlopen(req, None, self._connect_timeout)
                 break
-            except (HTTPError, gaierror) as e:
+            except URLError as e:
                 last_exception = e
                 if log_exceptions:
                     logger.exception("Failed connecting to remote scheduler %r", self._host)
@@ -95,11 +89,11 @@ class RemoteScheduler(Scheduler):
                 (attempts, self._host),
                 last_exception
             )
-        return response.body.decode('utf-8')
+        return response.read().decode('utf-8')
 
     def _request(self, url, data, log_exceptions=True, attempts=3):
         data = {'data': json.dumps(data)}
-        body = six.moves.urllib.parse.urlencode(data).encode('utf-8')
+        body = urlencode(data).encode('utf-8')
 
         page = self._fetch(url, body, log_exceptions, attempts)
         result = json.loads(page)

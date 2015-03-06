@@ -19,12 +19,12 @@ from helpers import unittest
 
 import luigi.rpc
 from luigi.scheduler import CentralPlannerScheduler
-import central_planner_test
+from central_planner_test import CentralPlannerTest
 import luigi.server
 from server_test import ServerTestBase
 
 
-class RPCTest(central_planner_test.CentralPlannerTest, ServerTestBase):
+class RPCTest(CentralPlannerTest, ServerTestBase):
 
     def get_app(self):
         conf = self.get_scheduler_config()
@@ -33,7 +33,7 @@ class RPCTest(central_planner_test.CentralPlannerTest, ServerTestBase):
 
     def setUp(self):
         super(RPCTest, self).setUp()
-        self.sch = luigi.rpc.RemoteScheduler(port=self.get_http_port())
+        self.sch = luigi.rpc.RemoteScheduler()
         self.sch._wait = lambda: None
 
     def test_ping(self):
