@@ -42,7 +42,6 @@ with open('README.rst') as fobj:
 install_requires = [
     'pyparsing',
     'tornado',
-    'snakebite>=2.5.0',
     'python-daemon',
 ]
 
@@ -51,11 +50,11 @@ if os.environ.get('READTHEDOCS', None) == 'True':
     # So that we can build documentation for luigi.db_task_history and luigi.contrib.sqla
 
 if sys.version_info[:2] < (2, 7):
-    install_requires.extend(['argparse', 'ordereddict'])
+    install_requires.extend(['argparse', 'ordereddict', 'importlib'])
 
 setup(
     name='luigi',
-    version='1.0.24',
+    version='1.1.1',
     description='Workflow mgmgt + task scheduling + dependency resolution',
     long_description=long_description,
     author='Erik Bernhardsson',
