@@ -547,7 +547,13 @@ class DefaultHadoopJobRunner(HadoopJobRunner):
     def __init__(self):
         config = configuration.get_config()
         streaming_jar = config.get('hadoop', 'streaming-jar')
-        super(DefaultHadoopJobRunner, self).__init__(streaming_jar=streaming_jar)
+        end_job_with_atomic_move_dir = True
+        if config.get('hadoop', 'end_job_with_atomic_move_dir') != None:
+            end_job_with_atomic_move_dir = config.getboolean('hadoop', 'end_job_with_atomic_move_dir')
+
+
+        super(DefaultHadoopJobRunner, self).__init__(streaming_jar=streaming_jar,
+                                                     end_job_with_atomic_move_dir=end_job_with_atomic_move_dir)
         # TODO: add more configurable options
 
 
