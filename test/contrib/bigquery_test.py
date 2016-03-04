@@ -15,49 +15,21 @@
 # limitations under the License.
 #
 
-"""This is an integration test for the Bigquery-luigi binding.
-
-This test requires credentials that can access GCS & access to a bucket below.
-Follow the directions in the gcloud tools to set up local credentials.
+"""
+These are the unit tests for the Bigquery-luigi binding.
 """
 
-import json
-import os
 
 import luigi
 from luigi.contrib import bigquery
 
 from helpers import unittest
-from contrib import gcs_test
-from nose.plugins.attrib import attr
 from mock import MagicMock
 
-PROJECT_ID = gcs_test.PROJECT_ID
-DATASET_ID = os.environ.get('BQ_TEST_DATASET_ID', 'luigi_tests')
+PROJECT_ID = 'projectid'
+DATASET_ID = 'dataset'
 
 
-@attr('gcloud')
-class TestLoadTask(bigquery.BigqueryLoadTask):
-    client = MagicMock()
-    source = luigi.Parameter()
-    table = luigi.Parameter()
-
-    @property
-    def schema(self):
-        return [
-            {'mode': 'NULLABLE', 'name': 'field1', 'type': 'STRING'},
-            {'mode': 'NULLABLE', 'name': 'field2', 'type': 'INTEGER'},
-        ]
-
-    def source_uris(self):
-        return [self.source]
-
-    def output(self):
-        return bigquery.BigqueryTarget(PROJECT_ID, DATASET_ID, self.table,
-                                       client=self.client)
-
-
-@attr('gcloud')
 class TestRunQueryTask(bigquery.BigqueryRunQueryTask):
     client = MagicMock()
     query = ''' SELECT 'hello' as field1, 2 as field2 '''
@@ -65,6 +37,13 @@ class TestRunQueryTask(bigquery.BigqueryRunQueryTask):
 
     def output(self):
         return bigquery.BigqueryTarget(PROJECT_ID, DATASET_ID, self.table, client=self.client)
+
+
+class TestRunQueryTaskDontFlattenResults(TestRunQueryTask):
+
+    @property
+    def flatten_results(self):
+        return False
 
 
 class TestRunQueryTaskWithRequires(bigquery.BigqueryRunQueryTask):
@@ -85,78 +64,41 @@ class TestRunQueryTaskWithRequires(bigquery.BigqueryRunQueryTask):
         return bigquery.BigqueryTarget(PROJECT_ID, DATASET_ID, self.table, client=self.client)
 
 
-@attr('gcloud')
-class BigqueryTest(gcs_test._GCSBaseTestCase):
-    def setUp(self):
-        super(BigqueryTest, self).setUp()
-        self.bq_client = bigquery.BigqueryClient(gcs_test.CREDENTIALS)
+class TestExternalBigqueryTask(bigquery.ExternalBigqueryTask):
+    client = MagicMock()
 
-        self.table = bigquery.BQTable(project_id=PROJECT_ID, dataset_id=DATASET_ID,
-                                      table_id=self.id().split('.')[-1])
-        self.addCleanup(self.bq_client.delete_table, self.table)
-
-    def create_dataset(self, data=[]):
-        self.bq_client.delete_table(self.table)
-
-        text = '\n'.join(map(json.dumps, data))
-        gcs_file = gcs_test.bucket_url(self.id())
-        self.client.put_string(text, gcs_file)
-
-        task = TestLoadTask(source=gcs_file, table=self.table.table_id)
-        task._BIGQUERY_CLIENT = self.bq_client
-
-        task.run()
-
-    def test_table_uri(self):
-        intended_uri = "bq://" + PROJECT_ID + "/" + \
-                       DATASET_ID + "/" + self.table.table_id
-        self.assertTrue(self.table.uri == intended_uri)
-
-    def test_load_and_copy(self):
-        self.create_dataset([
-            {'field1': 'hi', 'field2': 1},
-            {'field1': 'bye', 'field2': 2},
-        ])
-
-        # Cram some stuff in here to make the tests run faster - loading data takes a while!
-        self.assertTrue(self.bq_client.dataset_exists(self.table))
-        self.assertTrue(self.bq_client.table_exists(self.table))
-        self.assertIn(self.table.dataset_id,
-                      list(self.bq_client.list_datasets(self.table.project_id)))
-        self.assertIn(self.table.table_id,
-                      list(self.bq_client.list_tables(self.table.dataset)))
-
-        new_table = self.table._replace(table_id=self.table.table_id + '_copy')
-        self.bq_client.copy(
-            source_table=self.table,
-            dest_table=new_table
-        )
-        self.assertTrue(self.bq_client.table_exists(new_table))
-        self.bq_client.delete_table(new_table)
-        self.assertFalse(self.bq_client.table_exists(new_table))
-
-    def test_run_query(self):
-        task = TestRunQueryTask(table=self.table.table_id)
-        task._BIGQUERY_CLIENT = self.bq_client
-        task.run()
-
-        self.assertTrue(self.bq_client.table_exists(self.table))
+    def output(self):
+        return bigquery.BigqueryTarget(PROJECT_ID, DATASET_ID, 'table1', client=self.client)
 
 
-class BulkCompleteTest(unittest.TestCase):
+class TestCreateViewTask(bigquery.BigqueryCreateViewTask):
+    client = MagicMock()
+    view = '''SELECT * FROM table LIMIT 10'''
+
+    def output(self):
+        return bigquery.BigqueryTarget(PROJECT_ID, DATASET_ID, 'view1', client=self.client)
+
+
+class BigqueryTest(unittest.TestCase):
 
     def test_bulk_complete(self):
         parameters = ['table1', 'table2']
 
         client = MagicMock()
+        client.dataset_exists.return_value = True
         client.list_tables.return_value = ['table2', 'table3']
         TestRunQueryTask.client = client
 
         complete = list(TestRunQueryTask.bulk_complete(parameters))
         self.assertEquals(complete, ['table2'])
 
+    def test_dataset_doesnt_exist(self):
+        client = MagicMock()
+        client.dataset_exists.return_value = False
+        TestRunQueryTask.client = client
 
-class RunQueryTest(unittest.TestCase):
+        complete = list(TestRunQueryTask.bulk_complete(['table1']))
+        self.assertEquals(complete, [])
 
     def test_query_property(self):
         task = TestRunQueryTask(table='table2')
@@ -178,3 +120,44 @@ class RunQueryTest(unittest.TestCase):
         expected_table = '[' + DATASET_ID + '.' + task.requires().output().table.table_id + ']'
         self.assertIn(expected_table, query)
         self.assertEqual(query, task.query)
+
+    def test_external_task(self):
+        task = TestExternalBigqueryTask()
+        self.assertIsInstance(task, luigi.ExternalTask)
+        self.assertIsInstance(task, bigquery.MixinBigqueryBulkComplete)
+
+    def test_create_view(self):
+        task = TestCreateViewTask()
+
+        task.client.get_view.return_value = None
+        self.assertFalse(task.complete())
+
+        task.run()
+        (table, view), _ = task.client.update_view.call_args
+        self.assertEqual(task.output().table, table)
+        self.assertEqual(task.view, view)
+
+    def test_update_view(self):
+        task = TestCreateViewTask()
+
+        task.client.get_view.return_value = 'some other query'
+        self.assertFalse(task.complete())
+
+        task.run()
+        (table, view), _ = task.client.update_view.call_args
+        self.assertEqual(task.output().table, table)
+        self.assertEqual(task.view, view)
+
+    def test_view_completed(self):
+        task = TestCreateViewTask()
+
+        task.client.get_view.return_value = task.view
+        self.assertTrue(task.complete())
+
+    def test_flatten_results(self):
+        task = TestRunQueryTask(table='table3')
+        self.assertTrue(task.flatten_results)
+
+    def test_dont_flatten_results(self):
+        task = TestRunQueryTaskDontFlattenResults(table='table3')
+        self.assertFalse(task.flatten_results)
