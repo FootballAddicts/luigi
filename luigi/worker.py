@@ -45,6 +45,7 @@ import threading
 import time
 import traceback
 import types
+import Crypto.Random
 
 from luigi import six
 
@@ -139,6 +140,7 @@ class TaskProcess(multiprocessing.Process):
             # Need to have different random seeds if running in separate processes
             random.seed((os.getpid(), time.time()))
 
+        Crypto.Random.atfork()
         status = FAILED
         expl = ''
         missing = []
@@ -710,6 +712,7 @@ class Worker(object):
         if self.worker_processes > 1:
             with fork_lock:
                 p.start()
+                Crypto.Random.atfork()
         else:
             # Run in the same process
             p.run()
