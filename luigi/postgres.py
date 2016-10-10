@@ -260,7 +260,11 @@ class CopyToTable(rdbms.CopyToTable):
         if value in self.null_values:
             return r'\\N'
         else:
-            return default_escape(six.text_type(value))
+            try:
+                return default_escape(six.text_type(value))
+            except UnicodeDecodeError:
+                return r'\\N'
+
 
 # everything below will rarely have to be overridden
 
