@@ -110,7 +110,6 @@ class GCSClient(luigi.target.FileSystem):
     def __init__(self, oauth_credentials=None, descriptor='', http_=None,
                  chunksize=CHUNKSIZE):
         self.chunksize = chunksize
-        http_ = http_ or httplib2.Http()
 
         if not oauth_credentials:
             oauth_credentials = oauth2client.client.GoogleCredentials.get_application_default()
